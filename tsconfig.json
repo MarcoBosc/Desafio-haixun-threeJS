@@ -10,7 +10,9 @@
     "allowJs": true,
     "baseUrl": "src",
     "paths": {
-      "@scripts/*": ["scripts/*"]
+      "@scripts/*": ["scripts/*"],
+      "@types/*": ["types/*"],
+      "@rules/*": ["rules/*"]
     }
   },
   "include": ["src/**/*"]
