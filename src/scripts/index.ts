@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { createShelf } from '@scripts/shelf';
+import { exportShelfJSON } from '@scripts/export';
 
 // ====== Container e Renderer ======
 const container: HTMLElement | null = document.getElementById('shelf-container');
@@ -35,29 +36,33 @@ const depthInput = document.getElementById('depth') as HTMLInputElement | null;
 const heightInput = document.getElementById('height') as HTMLInputElement | null;
 const thicknessInput = document.getElementById('thickness') as HTMLInputElement | null;
 const updateBtn = document.getElementById('update-shelf') as HTMLButtonElement | null;
-
-function clampNum(v: number, min?: number, max?: number) {
-  let x = v;
-  if (!Number.isFinite(x)) x = v || 0;
-  if (min !== undefined) x = Math.max(x, Number(min));
-  if (max !== undefined) x = Math.min(x, Number(max));
-  return x;
-}
+const exportBtn = document.getElementById('export-shelf') as HTMLButtonElement | null;
+const infoEl = document.getElementById('info') as HTMLElement | null;
 
 function readNumber(input: HTMLInputElement | null, fallback: number): number {
   if (!input) return fallback;
   const v = input.valueAsNumber;
-  const min = input.min !== '' ? Number(input.min) : undefined;
-  const max = input.max !== '' ? Number(input.max) : undefined;
-  return clampNum(Number.isFinite(v) ? v : fallback, min, max);
+  return Number.isFinite(v) ? v : fallback; // sem min/max
 }
 
 function getDimsFromInputs(): Dims {
-  // Fallbacks batem com os valores iniciais dos inputs no HTML
+  // Fallbacks com os valores iniciais dos inputs no HTML
   const W = readNumber(widthInput, 800);
   const P = readNumber(depthInput, 500);
   const H = readNumber(heightInput, 1600);
   const E = readNumber(thicknessInput, 18);
+  return { W, P, H, E };
+}
+
+// Evita shelfWidth negativo (width - 2*thickness) e valores inválidos
+function sanitizeDims(d: Dims): Dims {
+  const W = Math.max(1, d.W || 1);
+  const P = Math.max(1, d.P || 1);
+  const H = Math.max(1, d.H || 1);
+  let E = Math.max(1, d.E || 1);
+  // Garante que (W - 2*E) >= 1mm
+  const eMaxByW = Math.max(1, W / 2 - 0.5);
+  E = Math.min(E, eMaxByW);
   return { W, P, H, E };
 }
 
@@ -66,6 +71,11 @@ function positionCamera(d: Dims) {
   camera.lookAt(0, 0, 0);
   controls.target.set(0, 0, 0);
   controls.update();
+}
+
+function updateInfo(d: Dims) {
+  if (!infoEl) return;
+  infoEl.textContent = `Armário: ${d.W}×${d.P}×${d.H} mm — espessura: ${d.E} mm — arraste para rotacionar`;
 }
 
 // ====== Limpeza e rebuild ======
@@ -77,7 +87,6 @@ function disposeObject3D(obj: THREE.Object3D) {
     if (mesh.geometry) {
       mesh.geometry.dispose?.();
     }
-    // material pode ser array
     const mat = (mesh as any).material;
     if (Array.isArray(mat)) {
       mat.forEach(m => m?.dispose?.());
@@ -99,8 +108,15 @@ function removeHoleMarkers() {
 }
 
 function rebuildShelf() {
-  // Ler dimensões atuais
-  const dims = getDimsFromInputs();
+  // Ler e sanitizar dimensões atuais
+  const raw = getDimsFromInputs();
+  const dims = sanitizeDims(raw);
+
+  // Refletir dimensões saneadas nos inputs
+  if (widthInput) widthInput.value = String(dims.W);
+  if (depthInput) depthInput.value = String(dims.P);
+  if (heightInput) heightInput.value = String(dims.H);
+  if (thicknessInput) thicknessInput.value = String(dims.E);
 
   // Remover furos antigos
   removeHoleMarkers();
@@ -116,8 +132,9 @@ function rebuildShelf() {
   cabinet = createShelf(dims.W, dims.P, dims.H, dims.E, woodMaterial, scene);
   scene.add(cabinet);
 
-  // Ajustar câmera
+  // Ajustar câmera e atualizar infos
   positionCamera(dims);
+  updateInfo(dims);
 }
 
 // ====== Iluminação ======
@@ -141,13 +158,19 @@ window.addEventListener('resize', updateRendererSize);
 updateRendererSize();
 
 // ====== Inicialização ======
-// Renderizar inicialmente com os valores já presentes nos inputs
 rebuildShelf();
 
 // Atualizar ao clicar no botão
 if (updateBtn) {
   updateBtn.addEventListener('click', () => {
     rebuildShelf();
+  });
+}
+
+// Exportar JSON ao clicar no botão
+if (exportBtn) {
+  exportBtn.addEventListener('click', () => {
+    exportShelfJSON(scene);
   });
 }
 
